@@ -1,0 +1,36 @@
+# CMake build directories
+/build/
+/cmake-build*/          # Some IDEs like CLion use this
+/CMakeFiles/
+/Makefile
+/CMakeCache.txt
+/install_manifest.txt
+
+# Build output
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.out
+
+# CMake generated files
+compile_commands.json
+Testing/
+CTestTestfile.cmake
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# IDE/project-specific files
+.vscode/
+.idea/
+*.user
+*.swp
+
+# MacOS-specific
+.DS_Store
