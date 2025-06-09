@@ -4,15 +4,33 @@
 #include <iterator>
 #include <list>
 #include <map>
+#include <memory>
 #include <unordered_map>
 #include <vector>
-
 enum class Side { Buy, Sell };
 enum class OrderType { FillAndKill, GoodTillCancel };
 
 using Quantity = std::int32_t;
 using Price = std::int32_t;
 using OrderId = std::int32_t;
+
+struct LevelInfos {
+  Price price;
+  Quantity quantity;
+};
+
+class OrderBookLevelInfos {
+ public:
+  OrderBookLevelInfos(LevelInfos bidsInfos, LevelInfos asksInfos)
+      : bidsInfos_{bidsInfos}, asksInfos_{asksInfos} {};
+
+  LevelInfos GetBidsLevelInfos() const { return bidsInfos_; };
+  LevelInfos GetAsksLevelInfos() const { return asksInfos_; };
+
+ private:
+  LevelInfos bidsInfos_;
+  LevelInfos asksInfos_;
+};
 
 class Order {
  public:
@@ -54,6 +72,28 @@ class Order {
 using OrderPointer = std::shared_ptr<Order>;
 using OrderPointers = std::list<OrderPointer>;
 
+class OrderModify {
+ public:
+  OrderModify(OrderId orderId, Side side, Quantity quantity, Price price)
+      : orderId_{orderId}, side_{side}, quantity_{quantity}, price_{price} {}
+
+  OrderId GetOrderId() const { return orderId_; };
+  Side GetOrderSide() const { return side_; };
+  Quantity GetOrderQuantity() const { return quantity_; };
+  Price GetOrderPrice() const { return price_; };
+
+  OrderPointer ToOrderPointer(OrderType orderType) const {
+    return std::make_shared<Order>(GetOrderId(), orderType, GetOrderQuantity(),
+                                   GetOrderPrice(), GetOrderSide());
+  }
+
+ private:
+  OrderId orderId_;
+  Side side_;
+  Quantity quantity_;
+  Price price_;
+};
+
 struct TradeInfos {
   OrderId orderId;
   Price price;
@@ -87,12 +127,12 @@ class OrderBook {
     if(side == Side::Buy) {
       if(asks_.empty()) return false;
 
-      auto& [bestAsks, _] = *asks_.begin();
+      const auto& [bestAsks, _] = *asks_.begin();
       return price >= bestAsks;
     } else {
       if(bids_.empty()) return false;
 
-      auto& [bestBids, _] = *bids_.begin();
+      const auto& [bestBids, _] = *bids_.begin();
       return price <= bestBids;
     }
   };
@@ -111,7 +151,7 @@ class OrderBook {
       while(bids.size() && asks.size()) {
         auto& bid = *bids.begin();
         auto& ask = *asks.begin();
-        auto& quantity =
+        Quantity quantity =
             std::min(bid->GetRemainingQuantity(), ask->GetRemainingQuantity());
 
         bid->Fill(quantity);
@@ -137,14 +177,16 @@ class OrderBook {
         auto& [_, bids] = *bids_.begin();
         auto& order = bids.front();
         orders_.erase(order->GetOrderId());
-        // TODO add the GoodTillCancel check
+        if(order->GetOrderType() == OrderType::FillAndKill) {
+          CancelOrder(order->GetOrderId());
+        }
       }
 
       if(!asks.empty()) {
         auto& [_, asks] = *asks_.begin();
         auto& order = asks.front();
         orders_.erase(order->GetOrderId());
-        // TODO add the GoodTillCancel check
+        CancelOrder(order->GetOrderId());
       }
     }
     return trades;
@@ -178,7 +220,7 @@ class OrderBook {
   void CancelOrder(OrderId orderId) {
     if(!orders_.contains(orderId)) return;
 
-    auto& [order, location] = orders_.at(orderId);
+    const auto& [order, location] = orders_.at(orderId);
 
     if(order->GetSide() == Side::Buy) {
       auto& orders = bids_[order->GetPrice()];
@@ -191,6 +233,18 @@ class OrderBook {
     }
 
     orders_.erase(order->GetOrderId());
+  }
+
+  Trades ModifyOrder(OrderModify order) {
+    if(!orders_.contains(order.GetOrderId())) {
+      return {};
+    }
+
+    const auto& [existingOrder, _] = orders_.at(order.GetOrderId());
+    CancelOrder(order.GetOrderId());
+    AddOrder(order.ToOrderPointer(existingOrder->GetOrderType()));
+
+    return MatchOrders();
   }
 };
 
