@@ -5,6 +5,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <unordered_map>
 #include <vector>
 enum class Side { Buy, Sell };
@@ -14,22 +15,24 @@ using Quantity = std::int32_t;
 using Price = std::int32_t;
 using OrderId = std::int32_t;
 
-struct LevelInfos {
+struct LevelInfo {
   Price price;
   Quantity quantity;
 };
 
+using LevelInfos = std::vector<LevelInfo>;
+
 class OrderBookLevelInfos {
  public:
-  OrderBookLevelInfos(LevelInfos bidsInfos, LevelInfos asksInfos)
-      : bidsInfos_{bidsInfos}, asksInfos_{asksInfos} {};
+  OrderBookLevelInfos(LevelInfos& bidsInfos, LevelInfos& asksInfos)
+      : bids_{bidsInfos}, asks_{asksInfos} {};
 
-  LevelInfos GetBidsLevelInfos() const { return bidsInfos_; };
-  LevelInfos GetAsksLevelInfos() const { return asksInfos_; };
+  LevelInfos GetBidsLevelInfos() const { return bids_; };
+  LevelInfos GetAsksLevelInfos() const { return asks_; };
 
  private:
-  LevelInfos bidsInfos_;
-  LevelInfos asksInfos_;
+  LevelInfos bids_;
+  LevelInfos asks_;
 };
 
 class Order {
@@ -245,6 +248,31 @@ class OrderBook {
     AddOrder(order.ToOrderPointer(existingOrder->GetOrderType()));
 
     return MatchOrders();
+  }
+
+  OrderBookLevelInfos GetLevelInfos() const {
+    LevelInfos bidsInfos, asksInfos;
+    bidsInfos.reserve(orders_.size());
+    asksInfos.reserve(orders_.size());
+
+    auto CreateLevelInfos = [](Price price, const OrderPointers& orders) {
+      return LevelInfo{
+          price,
+          std::accumulate(orders.begin(), orders.end(), (Quantity)0,
+                          [](Quantity runningSum, const OrderPointer& order) {
+                            return runningSum + order->GetRemainingQuantity();
+                          })};
+    };
+
+    for(const auto& [price, orders] : bids_) {
+      bidsInfos.push_back(CreateLevelInfos(price, orders));
+    }
+
+    for(const auto& [price, orders] : asks_) {
+      asksInfos.push_back(CreateLevelInfos(price, orders));
+    }
+
+    return OrderBookLevelInfos{bidsInfos, asksInfos};
   }
 };
 
